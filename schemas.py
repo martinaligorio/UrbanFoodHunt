@@ -37,3 +37,24 @@ class FoodSpotResponse(BaseModel):
 
   class Config:
     from_attributes = True
+
+
+# Schema used when creating a review for a food spot
+class ReviewCreate(BaseModel):
+  rating: int
+  comment: Optional[str] = None
+  image_url: Optional[str] = None
+  user_id: int
+
+
+# Schema used when returning review data in responses
+class ReviewResponse(BaseModel):
+  id: int
+  spot_id: int
+  user_id: int
+  rating: int
+  comment: Optional[str] = None
+  image_url: Optional[str] = None
+
+  class Config:
+    from_attributes = True
