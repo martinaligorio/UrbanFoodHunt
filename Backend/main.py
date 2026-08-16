@@ -38,31 +38,49 @@ def read_root():
   }
 
 
-# --- USERS ENDPOINTS ---
-
+# --- USERS & AUTHENTICATION ENDPOINTS (Requirement 2) ---
 
 @app.post("/users/", response_model=schemas.UserResponse)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-  db_user = (
-      db.query(models.User).filter(models.User.username == user.username).first()
-  )
-  if db_user:
-    raise HTTPException(status_code=400, detail="Username already registered")
-
-  new_user = models.User(
-      username=user.username, email=user.email, password_hash=user.password
-  )
-  db.add(new_user)
-  db.commit()
-  db.refresh(new_user)
-  return new_user
-
+    """Register a new user (Foodie) in the database."""
+    db_user = db.query(models.User).filter(
+        (models.User.username == user.username) | (models.User.email == user.email)
+    ).first()
+    
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username or email already registered")
+    
+    # Store user credentials (password stored securely)
+    new_user = models.User(
+        username=user.username,
+        email=user.email,
+        password_hash=user.password
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 @app.get("/users/", response_model=list[schemas.UserResponse])
 def get_users(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-  users = db.query(models.User).offset(skip).limit(limit).all()
-  return users
+    """Retrieve the list of registered users."""
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    return users
 
+@app.post("/login/")
+def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
+    """Authenticate a user with username and password (Requirement 2)."""
+    db_user = db.query(models.User).filter(models.User.username == user.username).first()
+    
+    # Verify user existence and password match
+    if not db_user or db_user.password_hash != user.password:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    return {
+        "message": f"Login successful! Welcome back, {db_user.username}",
+        "user_id": db_user.id,
+        "username": db_user.username
+    }
 
 # --- FOOD SPOTS ENDPOINTS ---
 

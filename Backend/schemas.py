@@ -1,11 +1,11 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr 
 
 
 # Schema used when registering a new user
 class UserCreate(BaseModel):
   username: str
-  email: str
+  email: EmailStr
   password: str
 
 
@@ -58,3 +58,8 @@ class ReviewResponse(BaseModel):
 
   class Config:
     from_attributes = True
+
+# Schema for user login authentication 
+class UserLogin(BaseModel):
+  username: str
+  password: str
