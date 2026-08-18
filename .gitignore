@@ -1,0 +1,66 @@
+# ==========================================
+# FILE DI SISTEMA E OS
+# ==========================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==========================================
+# BACKEND (Python / FastAPI / SQLite)
+# ==========================================
+# Ambienti virtuali
+venv/
+env/
+ENV/
+.env
+
+# Cache di Python e file compilati
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database locali e strumenti di gestione SQLite
+*.db
+*.sqlite
+*.sqlite3
+*.sqbpro
+
+# Cartella upload (mantiene la cartella pulita escludendo i file caricati localmente)
+Backend/uploads/*
+!Backend/uploads/.gitkeep
+
+
+# ==========================================
+# FRONTEND (Flutter / Dart / Mobile)
+# ==========================================
+# Dipendenze e build di Flutter/Dart
+.dart_tool/
+.pub-cache/
+.pub/
+build/
+Frontend/build/
+
+# IDE, Editor e configurazioni locali
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# File specifici generati per Android/iOS
+android/local.properties
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+macos/Flutter/Generated.xcconfig
+macos/Pods/
