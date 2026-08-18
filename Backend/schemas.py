@@ -1,11 +1,11 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr 
+from pydantic import BaseModel, ConfigDict 
 
 
 # Schema used when registering a new user
 class UserCreate(BaseModel):
   username: str
-  email: EmailStr
+  email: str
   password: str
 
 
@@ -15,8 +15,7 @@ class UserResponse(BaseModel):
   username: str
   email: str
 
-  class Config:
-    from_attributes = True
+  model_config = ConfigDict(from_attributes=True)
 
 
 # Schema used when adding a new street food spot
@@ -35,8 +34,7 @@ class FoodSpotResponse(BaseModel):
   address: str
   user_id: int
 
-  class Config:
-    from_attributes = True
+  model_config = ConfigDict(from_attributes=True)
 
 
 # Schema used when creating a review for a food spot
@@ -56,8 +54,8 @@ class ReviewResponse(BaseModel):
   comment: Optional[str] = None
   image_url: Optional[str] = None
 
-  class Config:
-    from_attributes = True
+  model_config = ConfigDict(from_attributes=True)
+
 
 # Schema for user login authentication 
 class UserLogin(BaseModel):
