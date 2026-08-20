@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:geolocator/geolocator.dart'; // Required for GPS tracking (Requirement 5)
 
 /// Main entry point of the Flutter application.
 void main() {
@@ -31,15 +32,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Sostituito l'URL remoto con il backend locale FastAPI (Requisito 9)
-  // Nota: Se usi l'emulatore Android in futuro, usa 'http://10.0.2.2:8000'
+  // Backend URL configuration (Requirement 9)
+  // Note: Use 'http://10.0.2.2:8000' for Android Emulator
   final String backendUrl = "http://10.0.2.2:8000";
   
   String _serverStatus = "Not connected";
   List<dynamic> _spotsList = [];
   bool _isLoading = false;
 
-  /// Funzione asincrona per testare la connessione al server locale (Concurrency & REST API)
+  // State variables for GPS location management (Requirement 5)
+  String _locationMessage = "Location not yet detected";
+  bool _isGettingLocation = false;
+
+  /// Asynchronous function to test local backend connection (Concurrency & REST API)
   Future<void> _checkServerConnection() async {
     setState(() {
       _isLoading = true;
@@ -54,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _serverStatus = "Connected! Server says:\n${data['message']}";
         });
-        // Carica anche la lista dei food spots dopo la connessione
+        // Fetch food spots after successful connection
         _fetchFoodSpots();
       } else {
         setState(() {
@@ -63,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       setState(() {
-        _serverStatus = "Connection failed: $e\nAssicurati che Uvicorn sia attivo!";
+        _serverStatus = "Connection failed: $e\nMake sure Uvicorn is active!";
       });
     } finally {
       setState(() {
@@ -72,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Funzione per recuperare i dati dal database SQLite tramite l'API REST (/spots/)
+  /// Function to retrieve food spots from the local database via REST API (/spots/)
   Future<void> _fetchFoodSpots() async {
     try {
       final response = await http.get(Uri.parse('$backendUrl/spots/'));
@@ -82,7 +87,84 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print("Errore nel recupero degli spots: $e");
+      print("Error fetching spots: $e");
+    }
+  }
+
+  /// Function to retrieve current GPS coordinates and query nearby spots from FastAPI backend
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isGettingLocation = true;
+      _locationMessage = "Checking GPS permissions and service status...";
+    });
+
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 1. Check if location services are enabled on the device
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() {
+        _locationMessage = "Location services are disabled on the device.";
+        _isGettingLocation = false;
+      });
+      return;
+    }
+
+    // 2. Check application location permissions
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _locationMessage = "Location permissions were denied.";
+          _isGettingLocation = false;
+        });
+        return;
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      setState(() {
+        _locationMessage = "Location permissions are permanently denied. Please enable them in settings.";
+        _isGettingLocation = false;
+      });
+      return;
+    }
+
+    // 3. Retrieve the current geographic position and query backend
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high
+      );
+      
+      setState(() {
+        _locationMessage = "Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}\nFetching nearby spots from backend...";
+      });
+
+      // Query the FastAPI backend passing the GPS coordinates
+      final response = await http.get(
+        Uri.parse('$backendUrl/spots/nearby?lat=${position.latitude}&lon=${position.longitude}')
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _spotsList = jsonDecode(response.body);
+          _locationMessage = "Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}\n(Nearby food spots successfully retrieved!)";
+        });
+      } else {
+        setState(() {
+          _locationMessage = "Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}\n(GPS acquired, but backend returned status: ${response.statusCode})";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _locationMessage = "Error while retrieving location or connecting to backend: $e";
+      });
+    } finally {
+      setState(() {
+        _isGettingLocation = false;
+      });
     }
   }
 
@@ -112,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
             
-            // Box di stato del server
+            // Server status display box
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -127,7 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Pulsante di test connessione
+            // Server connection test button
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton.icon(
@@ -140,16 +222,45 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
             const SizedBox(height: 20),
+
+            // GPS Feature UI Component (Requirement 5)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Text(
+                _locationMessage,
+                style: const TextStyle(fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _isGettingLocation
+                ? const Center(child: CircularProgressIndicator())
+                : ElevatedButton.icon(
+                    onPressed: _getCurrentLocation,
+                    icon: const Icon(Icons.location_on),
+                    label: const Text('Find Nearby Spots (GPS)'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+            const SizedBox(height: 20),
+
             const Text(
-              'Food Spots dal Database Locale:',
+              'Food Spots from Local Database:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
 
-            // Lista dinamica dei chioschi presi dal database SQLite
+            // Dynamic list of food spots retrieved from SQLite database or GPS backend filter
             Expanded(
               child: _spotsList.isEmpty
-                  ? const Center(child: Text("Nessun locale caricato o connessione non ancora testata."))
+                  ? const Center(child: Text("No food spots loaded or connection not tested yet."))
                   : ListView.builder(
                       itemCount: _spotsList.length,
                       itemBuilder: (context, index) {
@@ -159,7 +270,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: ListTile(
                             leading: const Icon(Icons.storefront, color: Colors.orange),
                             title: Text(spot['name'] ?? ''),
-                            subtitle: Text(spot['address'] ?? ''),
+                            // Display both address and calculated distance in kilometers
+                            subtitle: Text("${spot['address'] ?? ''} • ${spot['distance_km']} km away"),
                           ),
                         );
                       },

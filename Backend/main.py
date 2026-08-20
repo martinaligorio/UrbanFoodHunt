@@ -1,266 +1,88 @@
-import database
-import models
-import schemas
-from fastapi import Depends, FastAPI, HTTPException
-from sqlalchemy.orm import Session
-import shutil
-import os
-from fastapi import File, UploadFile
+import math
 import httpx
+from fastapi import FastAPI, HTTPException
 
-# Automatically create tables in the SQLite database if they don't exist
-models.Base.metadata.create_all(bind=database.engine)
+app = FastAPI()
 
-app = FastAPI(title="UrbanFoodHunt API", version="1.0.0", description="API for UrbanFoodHunt: Street Food Stalls and Local Markets")
-
-# Folder where temporary uploaded images are stored before cloud sync
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Google Places API Key obtained from Google Cloud Console
-GOOGLE_MAPS_API_KEY = "AIzaSyAJoNtdjjTGJ0PC9I0lP32-RY3JHvEgmFk"
-
-# Dependency to get an active database session for each request
-def get_db():
-  db = database.SessionLocal()
-  try:
-    yield db
-  finally:
-    db.close()
-
-
-@app.get("/")
-def read_root():
-  return {
-      "message": (
-          "Welcome to UrbanFoodHunt! The server is active and the DB is ready."
-      )
-  }
-
-
-# --- USERS & AUTHENTICATION ENDPOINTS (Requirement 2) ---
-
-@app.post("/users/", response_model=schemas.UserResponse)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """Register a new user (Foodie) in the database."""
-    db_user = db.query(models.User).filter(
-        (models.User.username == user.username) | (models.User.email == user.email)
-    ).first()
-    
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username or email already registered")
-    
-    # Store user credentials (password stored securely)
-    new_user = models.User(
-        username=user.username,
-        email=user.email,
-        password_hash=user.password
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
-
-@app.get("/users/", response_model=list[schemas.UserResponse])
-def get_users(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    """Retrieve the list of registered users."""
-    users = db.query(models.User).offset(skip).limit(limit).all()
-    return users
-
-@app.post("/login/")
-def login_user(user: schemas.UserLogin, db: Session = Depends(get_db)):
-    """Authenticate a user with username and password (Requirement 2)."""
-    db_user = db.query(models.User).filter(models.User.username == user.username).first()
-    
-    # Verify user existence and password match
-    if not db_user or db_user.password_hash != user.password:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    
-    return {
-        "message": f"Login successful! Welcome back, {db_user.username}",
-        "user_id": db_user.id,
-        "username": db_user.username
-    }
-
-# --- FOOD SPOTS ENDPOINTS ---
-
-
-@app.post("/spots/", response_model=schemas.FoodSpotResponse)
-def create_food_spot(
-    spot: schemas.FoodSpotCreate, db: Session = Depends(get_db)
-):
-  db_user = (
-      db.query(models.User).filter(models.User.id == spot.user_id).first()
-  )
-  if not db_user:
-    raise HTTPException(status_code=404, detail="User not found")
-
-  new_spot = models.FoodSpot(
-      name=spot.name,
-      description=spot.description,
-      address=spot.address,
-      user_id=spot.user_id,
-  )
-  db.add(new_spot)
-  db.commit()
-  db.refresh(new_spot)
-  return new_spot
-
-
-@app.get("/spots/", response_model=list[schemas.FoodSpotResponse])
-def get_food_spots(
-    skip: int = 0, limit: int = 10, db: Session = Depends(get_db)
-):
-  spots = db.query(models.FoodSpot).offset(skip).limit(limit).all()
-  return spots
-
-
-# --- REVIEWS ENDPOINTS ---
-
-
-# Endpoint to add a review to a specific food spot (POST)
-@app.post("/spots/{spot_id}/reviews/", response_model=schemas.ReviewResponse)
-def create_review(
-    spot_id: int, review: schemas.ReviewCreate, db: Session = Depends(get_db)
-):
-  # Check if the food spot exists
-  db_spot = (
-      db.query(models.FoodSpot).filter(models.FoodSpot.id == spot_id).first()
-  )
-  if not db_spot:
-    raise HTTPException(status_code=404, detail="Food spot not found")
-
-  # Check if the user exists
-  db_user = (
-      db.query(models.User).filter(models.User.id == review.user_id).first()
-  )
-  if not db_user:
-    raise HTTPException(status_code=404, detail="User not found")
-
-  # Check if the user has already reviewed this food spot
-  existing_review = (
-      db.query(models.Review)
-      .filter(
-          models.Review.spot_id == spot_id,
-          models.Review.user_id == review.user_id,
-      )
-      .first()
-  )
-  if existing_review:
-    raise HTTPException(
-        status_code=400, detail="You have already reviewed this food spot"
-    )
-
-  # Create and save the new review record
-  new_review = models.Review(
-      spot_id=spot_id,
-      user_id=review.user_id,
-      rating=review.rating,
-      comment=review.comment,
-      image_url=review.image_url,
-  )
-  db.add(new_review)
-  db.commit()
-  db.refresh(new_review)
-  return new_review
-
-
-# Endpoint to list all reviews for a specific food spot (GET)
-@app.get(
-    "/spots/{spot_id}/reviews/", response_model=list[schemas.ReviewResponse]
-)
-def get_spot_reviews(spot_id: int, db: Session = Depends(get_db)):
-  reviews = (
-      db.query(models.Review).filter(models.Review.spot_id == spot_id).all()
-  )
-  return reviews
-
-# Endpoint to upload a food image to Cloud Storage (Requirement 8)
-@app.post("/upload-image/")
-async def upload_image(file: UploadFile = File(...)):
-  # In a production environment with Google Cloud Storage / Firebase Storage,
-  # you would upload the 'file.file' stream directly to the cloud bucket here
-  # and retrieve the public HTTPS URL.
-
-  file_path = os.path.join(UPLOAD_DIR, file.filename)
-
-  # Save the file locally as a simulation of cloud staging
-  with open(file_path, "wb") as buffer:
-    shutil.copyfileobj(file.file, buffer)
-
-  # Generate the public URL reference (simulating cloud storage response)
-  public_url = f"http://127.0.0.1:8000/{file_path}"
-
-  return {
-      "filename": file.filename,
-      "image_url": public_url,
-      "message": "Image successfully uploaded to cloud storage simulation",
-  }
-# Public Cloud API Endpoint (Requirement 1 & 7)
-# Checks the live status (open/closed) of a food spot using Google Places API
-import httpx
-
-
-import httpx
-
-
-@app.get("/spots/{spot_id}/live-status")
-async def get_spot_live_status(spot_id: int, db: Session = Depends(get_db)):
-  # Verify if the food spot exists in our local database
-  db_spot = (
-      db.query(models.FoodSpot).filter(models.FoodSpot.id == spot_id).first()
-  )
-  if not db_spot:
-    raise HTTPException(status_code=404, detail="Food spot not found")
-
-  query_name = db_spot.name
-  overpass_url = "https://overpass-api.de/api/interpreter"
-
-  # Improved Overpass QL query: searches nodes and ways for food/restaurants in Italy bounding box
-  overpass_query = f"""
-    [out:json][timeout:15];
-    (
-      node["amenity"~"restaurant|fast_food|cafe|pub"]["name"~"{query_name}", i](35.0,6.0,47.0,19.0);
-      way["amenity"~"restaurant|fast_food|cafe|pub"]["name"~"{query_name}", i](35.0,6.0,47.0,19.0);
-    );
-    out 1;
+# Helper function to calculate distance using the Haversine formula
+def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
+    Calculate the great-circle distance between two points 
+    on the Earth specified in latitude and longitude (returns distance in kilometers).
+    """
+    earth_radius_km = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
 
-  try:
-    async with httpx.AsyncClient() as client:
-      response = await client.post(overpass_url, data=overpass_query)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlon / 2) ** 2)
+    
+    c = 2 * math.asin(math.sqrt(a))
+    return earth_radius_km * c
 
-      if response.status_code == 200:
-        data = response.json()
-        elements = data.get("elements", [])
+# --- NEARBY SPOTS ENDPOINT WITH DISTANCE SORTING (Requirement 1 & 5) ---
+@app.get("/spots/nearby")
+async def get_nearby_spots(lat: float, lon: float):
+    """
+    Fetch nearby food spots from OpenStreetMap Overpass API, 
+    calculate the distance from user GPS using Haversine formula, 
+    sort them by distance in ascending order, and return the results.
+    """
+    overpass_url = "https://overpass-api.de/api/interpreter"
+    
+    # Search bounding box offset (approx 5-10km radius)
+    delta = 0.01
+    south = lat - delta
+    north = lat + delta
+    west = lon - delta
+    east = lon + delta
+    
+    overpass_query = f"""
+    [out:json][timeout:10];
+    (
+      node["amenity"~"restaurant|fast_food|cafe"]({south},{west},{north},{east});
+    );
+    out body;
+    """
+    
+    headers = {"User-Agent": "UrbanFoodHuntApp/1.0"}
 
-        if elements:
-          place = elements[0]
-          tags = place.get("tags", {})
-          opening_hours = tags.get(
-              "opening_hours", "Orari non specificati su OSM"
-          )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(overpass_url, data=overpass_query, headers=headers)
+            
+            if response.status_code != 200:
+                return []
+                
+            data = response.json()
+            elements = data.get("elements", [])
+            
+            spots = []
+            for element in elements:
+                tags = element.get("tags", {})
+                if "name" in tags and "lat" in element and "lon" in element:
+                    spot_lat = element.get("lat")
+                    spot_lon = element.get("lon")
+                    
+                    # Compute distance in kilometers from client GPS coordinates
+                    distance = calculate_haversine_distance(lat, lon, spot_lat, spot_lon)
+                    
+                    spots.append({
+                        "id": element.get("id"),
+                        "name": tags.get("name"),
+                        "address": tags.get("addr:street", "Address not specified"),
+                        "latitude": spot_lat,
+                        "longitude": spot_lon,
+                        "distance_km": round(distance, 2)  # Rounded distance for UI
+                    })
+            
+            # Sort spots by distance ascending (closest first)
+            spots.sort(key=lambda x: x["distance_km"])
+            
+            # Return up to 15 closest spots
+            return spots[:15]
 
-          return {
-              "spot_id": db_spot.id,
-              "spot_name": db_spot.name,
-              "osm_id": place.get("id"),
-              "opening_hours": opening_hours,
-              "is_open_now": opening_hours != "Closed",
-              "source": "OpenStreetMap Public Cloud API (Requirement 1)",
-          }
-
-      # Fallback simulation if the specific name is not found in OSM database
-      return {
-          "spot_id": db_spot.id,
-          "spot_name": db_spot.name,
-          "address": db_spot.address,
-          "is_open_now": True,
-          "source": "OpenStreetMap API Simulation Fallback (Requirement 1)",
-      }
-
-  except Exception as e:
-    raise HTTPException(
-        status_code=503,
-        detail=f"Public Cloud API unavailable: {str(e)}",
-    )
+    except Exception as e:
+        print(f"Error fetching data from public cloud API: {e}")
+        return []
