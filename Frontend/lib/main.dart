@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'dart:math';
 import 'package:geolocator/geolocator.dart'; // Required for GPS tracking (Requirement 5)
+import 'package:sensors_plus/sensors_plus.dart'; // Required for accelerometer sensor (Requirement 4)
 
 /// Main entry point of the Flutter application.
 void main() {
@@ -33,7 +36,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // Backend URL configuration (Requirement 9)
-  // Note: Use 'http://10.0.2.2:8000' for Android Emulator
+  // Use 'http://10.0.2.2:8000' for Android Emulator or your Render URL for production
   final String backendUrl = "http://10.0.2.2:8000";
   
   String _serverStatus = "Not connected";
@@ -44,31 +47,46 @@ class _HomeScreenState extends State<HomeScreen> {
   String _locationMessage = "Location not yet detected";
   bool _isGettingLocation = false;
 
-  /// Asynchronous function to test local backend connection (Concurrency & REST API)
+  // State variables for Accelerometer Sensor (Requirement 4)
+  String _sensorMessage = "Shake your phone to discover a random spot!";
+  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  bool _isShaking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startListeningToSensor();
+  }
+
+  @override
+  void dispose() {
+    // Cancel sensor stream subscription to prevent memory leaks
+    _accelerometerSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Asynchronous function to test local/remote backend connection (Concurrency & REST API)
   Future<void> _checkServerConnection() async {
     setState(() {
       _isLoading = true;
-      _serverStatus = "Connecting to local backend...";
+      _serverStatus = "Connecting to backend...";
     });
 
     try {
       final response = await http.get(Uri.parse('$backendUrl/'));
-
+      
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
         setState(() {
-          _serverStatus = "Connected! Server says:\n${data['message']}";
+          _serverStatus = "Connected successfully! Server is online.";
         });
-        // Fetch food spots after successful connection
-        _fetchFoodSpots();
       } else {
         setState(() {
-          _serverStatus = "Server error: Status code ${response.statusCode}";
+          _serverStatus = "Server responded with status: ${response.statusCode}";
         });
       }
     } catch (e) {
       setState(() {
-        _serverStatus = "Connection failed: $e\nMake sure Uvicorn is active!";
+        _serverStatus = "Connection failed: $e";
       });
     } finally {
       setState(() {
@@ -77,47 +95,32 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Function to retrieve food spots from the local database via REST API (/spots/)
-  Future<void> _fetchFoodSpots() async {
-    try {
-      final response = await http.get(Uri.parse('$backendUrl/spots/'));
-      if (response.statusCode == 200) {
-        setState(() {
-          _spotsList = jsonDecode(response.body);
-        });
-      }
-    } catch (e) {
-      print("Error fetching spots: $e");
-    }
-  }
-
-  /// Function to retrieve current GPS coordinates and query nearby spots from FastAPI backend
-  Future<void> _getCurrentLocation() async {
+  /// Asynchronous function to handle GPS location acquisition and fetch nearby spots (Requirement 5 & Public Cloud API)
+  Future<void> _getCurrentLocationAndFetchSpots() async {
     setState(() {
       _isGettingLocation = true;
-      _locationMessage = "Checking GPS permissions and service status...";
+      _locationMessage = "Checking location permissions...";
     });
 
     bool serviceEnabled;
     LocationPermission permission;
 
-    // 1. Check if location services are enabled on the device
+    // Test if location services are enabled.
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() {
-        _locationMessage = "Location services are disabled on the device.";
+        _locationMessage = 'Location services are disabled.';
         _isGettingLocation = false;
       });
       return;
     }
 
-    // 2. Check application location permissions
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         setState(() {
-          _locationMessage = "Location permissions were denied.";
+          _locationMessage = 'Location permissions are denied.';
           _isGettingLocation = false;
         });
         return;
@@ -126,40 +129,40 @@ class _HomeScreenState extends State<HomeScreen> {
     
     if (permission == LocationPermission.deniedForever) {
       setState(() {
-        _locationMessage = "Location permissions are permanently denied. Please enable them in settings.";
+        _locationMessage = 'Location permissions are permanently denied.';
         _isGettingLocation = false;
       });
       return;
     }
 
-    // 3. Retrieve the current geographic position and query backend
     try {
+      // Get current GPS coordinates
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high
+        desiredAccuracy: LocationAccuracy.high,
       );
-      
+
       setState(() {
-        _locationMessage = "Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}\nFetching nearby spots from backend...";
+        _locationMessage = "Lat: ${position.latitude}, Lon: ${position.longitude}";
       });
 
-      // Query the FastAPI backend passing the GPS coordinates
-      final response = await http.get(
-        Uri.parse('$backendUrl/spots/nearby?lat=${position.latitude}&lon=${position.longitude}')
-      );
+      // Fetch nearby spots from backend passing GPS coordinates
+      final url = Uri.parse('$backendUrl/spots/nearby?lat=${position.latitude}&lon=${position.longitude}');
+      final response = await http.get(url);
 
       if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
         setState(() {
-          _spotsList = jsonDecode(response.body);
-          _locationMessage = "Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}\n(Nearby food spots successfully retrieved!)";
+          _spotsList = data;
+          _serverStatus = "Found ${_spotsList.length} nearby spots!";
         });
       } else {
         setState(() {
-          _locationMessage = "Lat: ${position.latitude.toStringAsFixed(4)}, Lon: ${position.longitude.toStringAsFixed(4)}\n(GPS acquired, but backend returned status: ${response.statusCode})";
+          _serverStatus = "Failed to load spots from backend.";
         });
       }
     } catch (e) {
       setState(() {
-        _locationMessage = "Error while retrieving location or connecting to backend: $e";
+        _locationMessage = "Error getting GPS: $e";
       });
     } finally {
       setState(() {
@@ -168,11 +171,52 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Listen to the accelerometer sensor to detect shake gestures (Requirement 4)
+  void _startListeningToSensor() {
+    _accelerometerSubscription = accelerometerEvents.listen((AccelerometerEvent event) {
+      // Calculate total G-force acceleration vector
+      double acceleration = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+      
+      // Threshold for a shake gesture (earth gravity is ~9.8, a sudden shake exceeds ~15)
+      if (acceleration > 15 && !_isShaking) {
+        _isShaking = true;
+        _triggerRandomFoodHunt();
+        
+        // Reset shake lock after 2 seconds
+        Timer(const Duration(seconds: 2), () {
+          _isShaking = false;
+        });
+      }
+    });
+  }
+
+  /// Trigger a random food recommendation when shaken, choosing from nearby GPS spots
+  void _triggerRandomFoodHunt() {
+    // Check if the nearby spots list is empty
+    if (_spotsList.isEmpty) {
+      setState(() {
+        _sensorMessage = "🎉 Shake detected!\nNo nearby spots loaded yet. Please search via GPS first!";
+      });
+      return;
+    }
+    
+    // Select a random spot from the dynamically fetched nearby spots list
+    final randomSpot = _spotsList[Random().nextInt(_spotsList.length)];
+    
+    final spotName = randomSpot['name'] ?? 'Unknown Spot';
+    final spotAddress = randomSpot['address'] ?? 'Address not specified';
+    final spotDistance = randomSpot['distance_km'] ?? '';
+
+    setState(() {
+      _sensorMessage = "🎉 Shake detected!\nRecommended: $spotName\n📍 $spotAddress • $spotDistance km away";
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Urban Food Hunt - Local Cloud'),
+        title: const Text('Urban Food Hunt'),
         backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
       ),
@@ -181,20 +225,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(
-              Icons.fastfood,
-              size: 80,
-              color: Colors.deepOrange,
-            ),
-            const SizedBox(height: 20),
+            // Welcome Header
             const Text(
               'Welcome to Urban Food Hunt!',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 15),
             
-            // Server status display box
+            // Server Status Container
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -207,57 +246,67 @@ class _HomeScreenState extends State<HomeScreen> {
                 textAlign: TextAlign.center,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 15),
 
-            // Server connection test button
+            // Test Connection Button
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton.icon(
                     onPressed: _checkServerConnection,
                     icon: const Icon(Icons.cloud_sync),
-                    label: const Text('Test Local Backend Connection'),
+                    label: const Text('Test Backend Connection'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
                       foregroundColor: Colors.white,
                     ),
                   ),
-            const SizedBox(height: 20),
-
-            // GPS Feature UI Component (Requirement 5)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Text(
-                _locationMessage,
-                style: const TextStyle(fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
-            ),
             const SizedBox(height: 10),
+
+            // GPS Location Button
             _isGettingLocation
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton.icon(
-                    onPressed: _getCurrentLocation,
-                    icon: const Icon(Icons.location_on),
+                    onPressed: _getCurrentLocationAndFetchSpots,
+                    icon: const Icon(Icons.gps_fixed),
                     label: const Text('Find Nearby Spots (GPS)'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepOrange,
                       foregroundColor: Colors.white,
                     ),
                   ),
+            const SizedBox(height: 10),
+
+            // Sensor Box (Requirement 4: Accelerometer Shake)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                border: Border.all(color: Colors.orange),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.vibration, color: Colors.orange, size: 30),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _sensorMessage,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 20),
 
+            // List Header
             const Text(
-              'Food Spots from Local Database:',
+              'Food Spots Sorted by Distance:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
 
-            // Dynamic list of food spots retrieved from SQLite database or GPS backend filter
+            // Dynamic list of food spots retrieved from Public Cloud API & GPS calculation
             Expanded(
               child: _spotsList.isEmpty
                   ? const Center(child: Text("No food spots loaded or connection not tested yet."))
@@ -270,7 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: ListTile(
                             leading: const Icon(Icons.storefront, color: Colors.orange),
                             title: Text(spot['name'] ?? ''),
-                            // Display both address and calculated distance in kilometers
+                            // Display address and calculated distance in kilometers
                             subtitle: Text("${spot['address'] ?? ''} • ${spot['distance_km']} km away"),
                           ),
                         );
