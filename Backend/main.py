@@ -4,85 +4,75 @@ from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
 
-# Helper function to calculate distance using the Haversine formula
-def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Calculate the great-circle distance between two points 
-    on the Earth specified in latitude and longitude (returns distance in kilometers).
-    """
-    earth_radius_km = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
+# Replace with your Yelp Fusion API Key
+YELP_API_KEY = "QGh5a62SpWUXrXsO7BxGGvt6LvM9CDw8p3OLJSThY0qXXJppqNmydFaP7mgMTj8GmAAm9r9dRylNMJghruF6epmrcY7by0HFdSnlq_dGVJ90aIwz0U1k4JvnivqWanYx"
 
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) ** 2)
-    
-    c = 2 * math.asin(math.sqrt(a))
-    return earth_radius_km * c
+@app.get("/")
+def read_root():
+    return {"message": "UrbanFoodHunt Backend is running!"}
 
-# --- NEARBY SPOTS ENDPOINT WITH DISTANCE SORTING (Requirement 1 & 5) ---
 @app.get("/spots/nearby")
-async def get_nearby_spots(lat: float, lon: float):
+async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
     """
-    Fetch nearby food spots from OpenStreetMap Overpass API, 
-    calculate the distance from user GPS using Haversine formula, 
-    sort them by distance in ascending order, and return the results.
+    Fetch nearby food spots from Yelp Fusion API using GPS coordinates and a dynamic radius,
+    returning name, address, rating, review count, and distance.
     """
-    overpass_url = "https://overpass-api.de/api/interpreter"
+    url = "https://api.yelp.com/v3/businesses/search"
     
-    # Search bounding box offset (approx 5-10km radius)
-    delta = 0.01
-    south = lat - delta
-    north = lat + delta
-    west = lon - delta
-    east = lon + delta
+    headers = {
+        "Authorization": f"Bearer {YELP_API_KEY}",
+        "accept": "application/json"
+    }
     
-    overpass_query = f"""
-    [out:json][timeout:10];
-    (
-      node["amenity"~"restaurant|fast_food|cafe"]({south},{west},{north},{east});
-    );
-    out body;
-    """
+    # Convert km to meters for Yelp (Yelp max allowed is 40000 meters / 40 km)
+    radius_meters = int(min(max(radius_km * 1000, 500), 40000))
     
-    headers = {"User-Agent": "UrbanFoodHuntApp/1.0"}
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "term": "restaurants",
+        "radius": radius_meters, 
+        "limit": 30
+    }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(overpass_url, data=overpass_query, headers=headers)
+            response = await client.get(url, headers=headers, params=params)
             
             if response.status_code != 200:
+                print(f"Yelp API error: {response.text}")
                 return []
                 
             data = response.json()
-            elements = data.get("elements", [])
+            businesses = data.get("businesses", [])
             
             spots = []
-            for element in elements:
-                tags = element.get("tags", {})
-                if "name" in tags and "lat" in element and "lon" in element:
-                    spot_lat = element.get("lat")
-                    spot_lon = element.get("lon")
-                    
-                    # Compute distance in kilometers from client GPS coordinates
-                    distance = calculate_haversine_distance(lat, lon, spot_lat, spot_lon)
-                    
-                    spots.append({
-                        "id": element.get("id"),
-                        "name": tags.get("name"),
-                        "address": tags.get("addr:street", "Address not specified"),
-                        "latitude": spot_lat,
-                        "longitude": spot_lon,
-                        "distance_km": round(distance, 2)  # Rounded distance for UI
-                    })
+            for biz in businesses:
+                location = biz.get("location", {})
+                address_parts = location.get("display_address", ["Address not specified"])
+                address_str = ", ".join(address_parts)
+                
+                distance_meters = biz.get("distance", 0.0)
+                distance_km = round(distance_meters / 1000.0, 2)
+                
+                spots.append({
+                    "id": biz.get("id"),
+                    "name": biz.get("name"),
+                    "address": address_str,
+                    "rating": biz.get("rating", 0.0),
+                    "review_count": biz.get("review_count", 0),
+                    "latitude": biz.get("coordinates", {}).get("latitude"),
+                    "longitude": biz.get("coordinates", {}).get("longitude"),
+                    "distance_km": distance_km
+                })
             
-            # Sort spots by distance ascending (closest first)
-            spots.sort(key=lambda x: x["distance_km"])
+            # Extra backend safety filter based on user-selected distance
+            filtered_spots = [s for s in spots if s["distance_km"] <= radius_km]
+            # Default sorting from closest to farthest
+            filtered_spots.sort(key=lambda x: x["distance_km"])
             
-            # Return up to 15 closest spots
-            return spots[:15]
+            return filtered_spots
 
     except Exception as e:
-        print(f"Error fetching data from public cloud API: {e}")
+        print(f"Error fetching data from Yelp API: {e}")
         return []

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:geolocator/geolocator.dart'; // Required for GPS tracking (Requirement 5)
 import 'package:sensors_plus/sensors_plus.dart'; // Required for accelerometer sensor (Requirement 4)
+import 'package:fl_chart/fl_chart.dart'; // Required for 2D graphics (Requirement 3)
 
 /// Main entry point of the Flutter application.
 void main() {
@@ -36,12 +37,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // Backend URL configuration (Requirement 9)
-  // Use 'http://10.0.2.2:8000' for Android Emulator or your Render URL for production
   final String backendUrl = "http://10.0.2.2:8000";
   
   String _serverStatus = "Not connected";
   List<dynamic> _spotsList = [];
   bool _isLoading = false;
+
+  // State variable for maximum distance selected by user via Slider (default 5 km)
+  double _maxDistanceKm = 5.0;
 
   // State variables for GPS location management (Requirement 5)
   String _locationMessage = "Location not yet detected";
@@ -60,9 +63,129 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    // Cancel sensor stream subscription to prevent memory leaks
     _accelerometerSubscription?.cancel();
     super.dispose();
+  }
+
+  /// Sort spots list based on the chosen criteria
+  void _sortSpots(String criteria) {
+    setState(() {
+      if (criteria == 'distance') {
+        _spotsList.sort((a, b) => (a['distance_km'] ?? 0.0).compareTo(b['distance_km'] ?? 0.0));
+      } else if (criteria == 'rating') {
+        _spotsList.sort((a, b) => (b['rating'] ?? 0.0).compareTo(a['rating'] ?? 0.0));
+      } else if (criteria == 'reviews') {
+        _spotsList.sort((a, b) => (b['review_count'] ?? 0).compareTo(a['review_count'] ?? 0));
+      }
+    });
+  }
+
+  /// Opens a modal bottom sheet displaying a 2D Bar Chart of the spots ratings (Requirement 3)
+  void _showRatingChartModal(BuildContext context) {
+    if (_spotsList.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No spots loaded yet. Please search via GPS first!')),
+      );
+      return;
+    }
+
+    // Count ratings distribution (buckets: 3.0, 3.5, 4.0, 4.5, 5.0)
+    Map<double, int> ratingCounts = {
+      3.0: 0,
+      3.5: 0,
+      4.0: 0,
+      4.5: 0,
+      5.0: 0,
+    };
+
+    for (var spot in _spotsList) {
+      double rating = (spot['rating'] ?? 0.0).toDouble();
+      double bucket = (rating * 2).round() / 2;
+      if (ratingCounts.containsKey(bucket)) {
+        ratingCounts[bucket] = ratingCounts[bucket]! + 1;
+      } else {
+        if (bucket < 3.0) {
+          ratingCounts[3.0] = (ratingCounts[3.0] ?? 0) + 1;
+        } else {
+          ratingCounts[5.0] = (ratingCounts[5.0] ?? 0) + 1;
+        }
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          height: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ratings Distribution (2D Chart)',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'Number of nearby spots per star rating',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+              const SizedBox(height: 25),
+              Expanded(
+                child: BarChart(
+                  BarChartData(
+                    alignment: BarChartAlignment.spaceAround,
+                    maxY: 15,
+                    barTouchData: BarTouchData(enabled: true),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (double value, TitleMeta meta) {
+                            const style = TextStyle(fontWeight: FontWeight.bold, fontSize: 12);
+                            String text = '';
+                            switch (value.toInt()) {
+                              case 0: text = '3.0 ⭐'; break;
+                              case 1: text = '3.5 ⭐'; break;
+                              case 2: text = '4.0 ⭐'; break;
+                              case 3: text = '4.5 ⭐'; break;
+                              case 4: text = '5.0 ⭐'; break;
+                            }
+                            return SideTitleWidget(
+                              axisSide: meta.axisSide,
+                              child: Text(text, style: style),
+                            );
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: true, reservedSize: 28),
+                      ),
+                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    ),
+                    gridData: FlGridData(show: true),
+                    borderData: FlBorderData(show: false),
+                    barGroups: [
+                      BarChartGroupData(x: 0, barRods: [BarChartRodData(toY: ratingCounts[3.0]!.toDouble(), color: Colors.orange, width: 18, borderRadius: BorderRadius.circular(4))]),
+                      BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: ratingCounts[3.5]!.toDouble(), color: Colors.orange, width: 18, borderRadius: BorderRadius.circular(4))]),
+                      BarChartGroupData(x: 2, barRods: [BarChartRodData(toY: ratingCounts[4.0]!.toDouble(), color: Colors.deepOrange, width: 18, borderRadius: BorderRadius.circular(4))]),
+                      BarChartGroupData(x: 3, barRods: [BarChartRodData(toY: ratingCounts[4.5]!.toDouble(), color: Colors.deepOrange, width: 18, borderRadius: BorderRadius.circular(4))]),
+                      BarChartGroupData(x: 4, barRods: [BarChartRodData(toY: ratingCounts[5.0]!.toDouble(), color: Colors.amber, width: 18, borderRadius: BorderRadius.circular(4))]),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// Asynchronous function to test local/remote backend connection (Concurrency & REST API)
@@ -95,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Asynchronous function to handle GPS location acquisition and fetch nearby spots (Requirement 5 & Public Cloud API)
+  /// Asynchronous function to handle GPS location acquisition and fetch nearby spots with dynamic radius
   Future<void> _getCurrentLocationAndFetchSpots() async {
     setState(() {
       _isGettingLocation = true;
@@ -105,7 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // Test if location services are enabled.
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() {
@@ -136,7 +258,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
-      // Get current GPS coordinates
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
@@ -145,15 +266,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _locationMessage = "Lat: ${position.latitude}, Lon: ${position.longitude}";
       });
 
-      // Fetch nearby spots from backend passing GPS coordinates
-      final url = Uri.parse('$backendUrl/spots/nearby?lat=${position.latitude}&lon=${position.longitude}');
+      // Fetch nearby spots from backend passing GPS coordinates and dynamic radius
+      final url = Uri.parse('$backendUrl/spots/nearby?lat=${position.latitude}&lon=${position.longitude}&radius_km=$_maxDistanceKm');
       final response = await http.get(url);
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
           _spotsList = data;
-          _serverStatus = "Found ${_spotsList.length} nearby spots!";
+          _serverStatus = "Found ${_spotsList.length} spots within ${_maxDistanceKm.toStringAsFixed(1)} km!";
         });
       } else {
         setState(() {
@@ -174,15 +295,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Listen to the accelerometer sensor to detect shake gestures (Requirement 4)
   void _startListeningToSensor() {
     _accelerometerSubscription = accelerometerEvents.listen((AccelerometerEvent event) {
-      // Calculate total G-force acceleration vector
       double acceleration = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
       
-      // Threshold for a shake gesture (earth gravity is ~9.8, a sudden shake exceeds ~15)
       if (acceleration > 15 && !_isShaking) {
         _isShaking = true;
         _triggerRandomFoodHunt();
         
-        // Reset shake lock after 2 seconds
         Timer(const Duration(seconds: 2), () {
           _isShaking = false;
         });
@@ -192,7 +310,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Trigger a random food recommendation when shaken, choosing from nearby GPS spots
   void _triggerRandomFoodHunt() {
-    // Check if the nearby spots list is empty
     if (_spotsList.isEmpty) {
       setState(() {
         _sensorMessage = "🎉 Shake detected!\nNo nearby spots loaded yet. Please search via GPS first!";
@@ -200,7 +317,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     
-    // Select a random spot from the dynamically fetched nearby spots list
     final randomSpot = _spotsList[Random().nextInt(_spotsList.length)];
     
     final spotName = randomSpot['name'] ?? 'Unknown Spot';
@@ -225,14 +341,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Welcome Header
-            const Text(
-              'Welcome to Urban Food Hunt!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 15),
-            
             // Server Status Container
             Container(
               padding: const EdgeInsets.all(12),
@@ -248,18 +356,47 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 15),
 
-            // Test Connection Button
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : ElevatedButton.icon(
-                    onPressed: _checkServerConnection,
-                    icon: const Icon(Icons.cloud_sync),
-                    label: const Text('Test Backend Connection'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                    ),
+            // Slider Container for Maximum Distance Selection
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Maximum Distance:',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                      Text(
+                        '${_maxDistanceKm.toStringAsFixed(1)} km',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 15),
+                      ),
+                    ],
                   ),
+                  Slider(
+                    value: _maxDistanceKm,
+                    min: 1.0,
+                    max: 30.0,
+                    divisions: 29,
+                    activeColor: Colors.deepOrange,
+                    inactiveColor: Colors.orange[100],
+                    label: '${_maxDistanceKm.toStringAsFixed(1)} km',
+                    onChanged: (double value) {
+                      setState(() {
+                        _maxDistanceKm = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 10),
 
             // GPS Location Button
@@ -272,9 +409,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepOrange,
                       foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
 
             // Sensor Box (Requirement 4: Accelerometer Shake)
             Container(
@@ -297,19 +435,72 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 15),
 
-            // List Header
-            const Text(
-              'Food Spots Sorted by Distance:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            // Button to open the 2D Chart (Requirement 3: 2D Graphics)
+            ElevatedButton.icon(
+              onPressed: () => _showRatingChartModal(context),
+              icon: const Icon(Icons.bar_chart),
+              label: const Text('View Ratings 2D Chart'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber[800],
+                foregroundColor: Colors.white,
+              ),
             ),
             const SizedBox(height: 10),
 
-            // Dynamic list of food spots retrieved from Public Cloud API & GPS calculation
+            // List Header & Sorting Filters
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Food Spots:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                if (_spotsList.isNotEmpty)
+                  Text(
+                    '${_spotsList.length} found',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Horizontally Scrollable Sorting Action Chips
+            Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Row(
+                  children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.near_me, size: 16, color: Colors.orange),
+                      label: const Text('Sort by Distance'),
+                      onPressed: () => _sortSpots('distance'),
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Icon(Icons.star, size: 16, color: Colors.amber),
+                      label: const Text('Top Rating'),
+                      onPressed: () => _sortSpots('rating'),
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Icon(Icons.comment, size: 16, color: Colors.blue),
+                      label: const Text('Most Reviewed'),
+                      onPressed: () => _sortSpots('reviews'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Dynamic list of food spots retrieved from Yelp API & GPS calculation
             Expanded(
               child: _spotsList.isEmpty
-                  ? const Center(child: Text("No food spots loaded or connection not tested yet."))
+                  ? const Center(child: Text("Adjust the slider and tap 'Find Nearby Spots' to start."))
                   : ListView.builder(
                       itemCount: _spotsList.length,
                       itemBuilder: (context, index) {
@@ -319,8 +510,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: ListTile(
                             leading: const Icon(Icons.storefront, color: Colors.orange),
                             title: Text(spot['name'] ?? ''),
-                            // Display address and calculated distance in kilometers
-                            subtitle: Text("${spot['address'] ?? ''} • ${spot['distance_km']} km away"),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(spot['address'] ?? ''),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.star, color: Colors.amber, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text("${spot['rating'] ?? 0.0} (${spot['review_count'] ?? 0} reviews)"),
+                                    const Text(" • "),
+                                    Text("${spot['distance_km'] ?? 0.0} km"),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },
