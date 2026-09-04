@@ -1,6 +1,6 @@
 from database import Base
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, ForeignKey, Integer, String, Text  # type: ignore[reportMissingImports]
+from sqlalchemy.orm import relationship  # type: ignore[reportMissingImports]
 
 
 # User model (Requirement 2: Multi-users support)
@@ -21,7 +21,7 @@ class User(Base):
 class FoodSpot(Base):
   __tablename__ = "food_spots"
 
-  id = Column(Integer, primary_key=True, index=True)
+  id = Column(String, primary_key=True, index=True)
   user_id = Column(Integer, ForeignKey("users.id"))
   name = Column(String, index=True)
   description = Column(Text)
@@ -39,7 +39,7 @@ class Review(Base):
   __tablename__ = "reviews"
 
   id = Column(Integer, primary_key=True, index=True)
-  spot_id = Column(Integer, ForeignKey("food_spots.id"))
+  spot_id = Column(String, ForeignKey("food_spots.id"))
   user_id = Column(Integer, ForeignKey("users.id"))
   rating = Column(Integer)
   comment = Column(Text)

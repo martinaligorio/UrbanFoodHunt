@@ -3,9 +3,13 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
+import 'dart:io';
 import 'package:geolocator/geolocator.dart'; // Required for GPS tracking (Requirement 5)
 import 'package:sensors_plus/sensors_plus.dart'; // Required for accelerometer sensor (Requirement 4)
 import 'package:fl_chart/fl_chart.dart'; // Required for 2D graphics (Requirement 3)
+import 'package:image_picker/image_picker.dart'; // Required for camera integration (Requirement 6)
+import 'login_screen.dart';
+import 'my_reviews_screen.dart';
 
 /// Main entry point of the Flutter application.
 void main() {
@@ -23,13 +27,16 @@ class UrbanFoodHuntApp extends StatelessWidget {
         primarySwatch: Colors.orange,
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: LoginScreen(),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int? userId;
+  final String? username;
+
+  const HomeScreen({super.key, this.userId, this.username});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -55,6 +62,10 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
   bool _isShaking = false;
 
+  // State variables for Camera / Image Picker (Requirement 6)
+  File? _selectedImage;
+  final ImagePicker _picker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _accelerometerSubscription?.cancel();
     super.dispose();
   }
+  
 
   /// Sort spots list based on the chosen criteria
   void _sortSpots(String criteria) {
@@ -78,6 +90,137 @@ class _HomeScreenState extends State<HomeScreen> {
         _spotsList.sort((a, b) => (b['review_count'] ?? 0).compareTo(a['review_count'] ?? 0));
       }
     });
+  }
+  /// Mostra un modulo popup per scrivere una recensione, scegliere le stelle e scattare la foto
+  void _showAddReviewDialog(BuildContext context, String spotId, String spotName) {
+    final TextEditingController commentController = TextEditingController();
+    int selectedRating = 5;
+    File? dialogImage;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: Text('Review $spotName'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Rating (1-5 stars):'),
+                    Row(
+                      children: List.generate(5, (index) {
+                        int star = index + 1;
+                        return IconButton(
+                          icon: Icon(
+                            star <= selectedRating ? Icons.star : Icons.star_border,
+                            color: Colors.amber,
+                          ),
+                          onPressed: () {
+                            setStateDialog(() {
+                              selectedRating = star;
+                            });
+                          },
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: commentController,
+                      decoration: const InputDecoration(
+                        labelText: 'Write a comment...',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 15),
+                    Center(
+                      child: dialogImage != null
+                          ? Image.file(dialogImage!, height: 100, width: 100, fit: BoxFit.cover)
+                          : const Text('No photo attached', style: TextStyle(color: Colors.grey)),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+                        if (image != null) {
+                          setStateDialog(() {
+                            dialogImage = File(image.path);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Take Photo (Camera)'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _submitReviewCustom(spotId, spotName, selectedRating, commentController.text, dialogImage);
+                  },
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _submitReviewCustom(String spotId, String spotName, int rating, String comment, File? imageFile) async {
+    if (widget.userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to post a review!')),
+      );
+      return;
+    }
+
+    var request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$backendUrl/spots/$spotId/reviews'),
+    );
+
+    request.fields['rating'] = rating.toString();
+    request.fields['comment'] = comment;
+    request.fields['user_id'] = widget.userId.toString();
+    request.fields['spot_name'] = spotName; // <-- Passa il nome del ristorante al backend!
+
+    if (imageFile != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath('file', imageFile.path),
+      );
+    }
+
+    try {
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Review for $spotName added successfully!')),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to submit review.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   /// Opens a modal bottom sheet displaying a 2D Bar Chart of the spots ratings (Requirement 3)
@@ -218,6 +361,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Naviga verso la schermata delle recensioni dell'utente
+  void _navigateToMyReviews() {
+    if (widget.userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to view your reviews!')),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MyReviewsScreen(userId: widget.userId!, backendUrl: backendUrl),
+      ),
+    );
+  }
+
   /// Asynchronous function to handle GPS location acquisition and fetch nearby spots with dynamic radius
   Future<void> _getCurrentLocationAndFetchSpots() async {
     setState(() {
@@ -332,9 +492,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Urban Food Hunt'),
+        title: Text(widget.username != null ? 'Urban Food Hunt (${widget.username})' : 'Urban Food Hunt'),
         backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.list_alt),
+            tooltip: 'View My Reviews',
+            onPressed: _navigateToMyReviews,
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -467,32 +634,29 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
 
             // Horizontally Scrollable Sorting Action Chips
-            Scrollbar(
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Row(
-                  children: [
-                    ActionChip(
-                      avatar: const Icon(Icons.near_me, size: 16, color: Colors.orange),
-                      label: const Text('Sort by Distance'),
-                      onPressed: () => _sortSpots('distance'),
-                    ),
-                    const SizedBox(width: 8),
-                    ActionChip(
-                      avatar: const Icon(Icons.star, size: 16, color: Colors.amber),
-                      label: const Text('Top Rating'),
-                      onPressed: () => _sortSpots('rating'),
-                    ),
-                    const SizedBox(width: 8),
-                    ActionChip(
-                      avatar: const Icon(Icons.comment, size: 16, color: Colors.blue),
-                      label: const Text('Most Reviewed'),
-                      onPressed: () => _sortSpots('reviews'),
-                    ),
-                  ],
-                ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Row(
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.near_me, size: 16, color: Colors.orange),
+                    label: const Text('Sort by Distance'),
+                    onPressed: () => _sortSpots('distance'),
+                  ),
+                  const SizedBox(width: 8),
+                  ActionChip(
+                    avatar: const Icon(Icons.star, size: 16, color: Colors.amber),
+                    label: const Text('Top Rating'),
+                    onPressed: () => _sortSpots('rating'),
+                  ),
+                  const SizedBox(width: 8),
+                  ActionChip(
+                    avatar: const Icon(Icons.comment, size: 16, color: Colors.blue),
+                    label: const Text('Most Reviewed'),
+                    onPressed: () => _sortSpots('reviews'),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -525,6 +689,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ],
                                 ),
                               ],
+                            ),
+                            // Camera action button to take a photo review (Requirement 6 & 10)
+                            trailing: ElevatedButton.icon(
+                              onPressed: () => _showAddReviewDialog(context, spot['id'].toString(), spot['name']),
+                              icon: const Icon(Icons.rate_review, size: 16),
+                              label: const Text('Review'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              ),
                             ),
                           ),
                         );

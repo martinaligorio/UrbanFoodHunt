@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, ConfigDict 
+from pydantic import BaseModel, ConfigDict  # pyright: ignore[reportMissingImports]
 
 
 # Schema used when registering a new user
@@ -48,7 +48,7 @@ class ReviewCreate(BaseModel):
 # Schema used when returning review data in responses
 class ReviewResponse(BaseModel):
   id: int
-  spot_id: int
+  spot_id: str
   user_id: int
   rating: int
   comment: Optional[str] = None
