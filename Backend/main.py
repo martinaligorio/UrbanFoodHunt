@@ -202,3 +202,43 @@ def delete_review(review_id: int, db: Session = Depends(get_db)):
     db.delete(db_review)
     db.commit()
     return {"message": "Review deleted successfully"}
+
+@app.put("/reviews/{review_id}")
+async def update_review(
+    review_id: int,
+    rating: int = Form(...),
+    comment: str = Form(None),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    db_review = db.query(models.Review).filter(models.Review.id == review_id).first()
+    if not db_review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    # Aggiorna i campi testuali
+    db_review.rating = rating
+    db_review.comment = comment
+
+    # Se viene caricata una nuova foto, la sostituisce
+    if file:
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        db_review.image_url = f"/{file_path}"
+
+    db.commit()
+    db.refresh(db_review)
+
+    # Recupera il nome del locale associato per restituire la risposta completa
+    spot = db.query(models.FoodSpot).filter(models.FoodSpot.id == db_review.spot_id).first()
+    spot_name = spot.name if spot else "Unknown Spot"
+
+    return {
+        "id": db_review.id,
+        "spot_id": db_review.spot_id,
+        "spot_name": spot_name,
+        "user_id": db_review.user_id,
+        "rating": db_review.rating,
+        "comment": db_review.comment,
+        "image_url": db_review.image_url
+    }

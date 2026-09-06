@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 
 class MyReviewsScreen extends StatefulWidget {
   final int userId;
@@ -16,11 +18,37 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
   List<dynamic> _myReviews = [];
   bool _isLoading = true;
   String _errorMessage = "";
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _fetchMyReviews();
+  }
+
+  Future<void> _fetchMyReviews() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${widget.backendUrl}/users/${widget.userId}/reviews'),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _myReviews = json.decode(response.body);
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = "Failed to load your reviews.";
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Connection error: $e";
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _deleteReview(int reviewId) async {
@@ -51,28 +79,136 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
     }
   }
 
-  Future<void> _fetchMyReviews() async {
-    try {
-      final response = await http.get(
-        Uri.parse('${widget.backendUrl}/users/${widget.userId}/reviews'),
+  void _showEditReviewDialog(Map<String, dynamic> review) {
+    final TextEditingController commentController = TextEditingController(text: review['comment'] ?? '');
+    int currentRating = review['rating'] ?? 5;
+    File? newImageFile;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: Text('Edit Review for ${review['spot_name']}'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Rating (1-5 stars):'),
+                    Row(
+                      children: List.generate(5, (index) {
+                        int star = index + 1;
+                        return IconButton(
+                          icon: Icon(
+                            star <= currentRating ? Icons.star : Icons.star_border,
+                            color: Colors.amber,
+                          ),
+                          onPressed: () {
+                            setStateDialog(() {
+                              currentRating = star;
+                            });
+                          },
+                        );
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: commentController,
+                      decoration: const InputDecoration(
+                        labelText: 'Edit comment...',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 15),
+                    Center(
+                      child: newImageFile != null
+                          ? Image.file(newImageFile!, height: 80, width: 80, fit: BoxFit.cover)
+                          : (review['image_url'] != null
+                              ? Image.network('${widget.backendUrl}${review['image_url']}', height: 80, width: 80, fit: BoxFit.cover)
+                              : const Text('No photo', style: TextStyle(color: Colors.grey))),
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+                        if (image != null) {
+                          setStateDialog(() {
+                            newImageFile = File(image.path);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Change Photo'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _updateReviewOnBackend(review['id'], currentRating, commentController.text, newImageFile);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _updateReviewOnBackend(int reviewId, int rating, String comment, File? imageFile) async {
+    var request = http.MultipartRequest(
+      'PUT',
+      Uri.parse('${widget.backendUrl}/reviews/$reviewId'),
+    );
+
+    request.fields['rating'] = rating.toString();
+    request.fields['comment'] = comment;
+
+    if (imageFile != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath('file', imageFile.path),
       );
+    }
+
+    try {
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
+        final updatedData = json.decode(response.body);
         setState(() {
-          _myReviews = json.decode(response.body);
-          _isLoading = false;
+          int index = _myReviews.indexWhere((r) => r['id'] == reviewId);
+          if (index != -1) {
+            _myReviews[index] = updatedData;
+          }
         });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Review updated successfully!')),
+        );
       } else {
-        setState(() {
-          _errorMessage = "Failed to load your reviews.";
-          _isLoading = false;
-        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update review.')),
+        );
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = "Connection error: $e";
-        _isLoading = false;
-      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     }
   }
 
@@ -118,8 +254,15 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                           review['rating'] ?? 5,
                                           (index) => const Icon(Icons.star, color: Colors.amber, size: 16),
                                         ),
-                                        const SizedBox(width: 8),
-                                        // Pulsante Elimina (Cestino)
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                                          tooltip: 'Edit review',
+                                          onPressed: () => _showEditReviewDialog(review),
+                                          constraints: const BoxConstraints(),
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                        const SizedBox(width: 4),
                                         IconButton(
                                           icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                           tooltip: 'Delete review',
