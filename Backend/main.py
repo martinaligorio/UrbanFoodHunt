@@ -9,6 +9,8 @@ import shutil
 import os
 # StaticFiles is provided by Starlette, which is FastAPI's underlying ASGI toolkit.
 from starlette.staticfiles import StaticFiles  # type: ignore[import-not-found]
+import cloudinary
+import cloudinary.uploader
 
 app = FastAPI()
 models.Base.metadata.create_all(bind=engine)
@@ -18,6 +20,8 @@ UPLOAD_DIR = "static/images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Cloudinary config
+cloudinary.config(secure=True)
 
 @app.get("/")
 def read_root():
@@ -144,10 +148,8 @@ async def create_review(
 
     image_url = None
     if file:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        image_url = f"/{file_path}" # Es: /static/images/nomefile.jpg
+        upload_result = cloudinary.uploader.upload(file.file)
+        image_url = upload_result.get("secure_url")
 
     new_review = models.Review(
         spot_id=spot_id,

@@ -126,10 +126,17 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                     Center(
                       child: newImageFile != null
                           ? Image.file(newImageFile!, height: 80, width: 80, fit: BoxFit.cover)
-                          : (review['image_url'] != null
-                              ? Image.network('${widget.backendUrl}${review['image_url']}', height: 80, width: 80, fit: BoxFit.cover)
-                              : const Text('No photo', style: TextStyle(color: Colors.grey))),
-                    ),
+                          : review['image_url'] != null
+                            ? Image.network(
+                                review['image_url'].startsWith('http') 
+                                    ? review['image_url'] 
+                                    : '${widget.backendUrl}${review['image_url']}',
+                                height: 80, 
+                                width: 80, 
+                                fit: BoxFit.cover,
+                              )
+                            : const Text('No photo', style: TextStyle(color: Colors.grey)),  
+                          ),
                     const SizedBox(height: 10),
                     ElevatedButton.icon(
                       onPressed: () async {
@@ -278,12 +285,22 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                 Text(review['comment'] ?? 'No comment provided.'),
                                 if (review['image_url'] != null) ...[
                                   const SizedBox(height: 10),
-                                  Image.network(
-                                    '${widget.backendUrl}${review['image_url']}',
-                                    height: 120,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => const Text('Image unavailable'),
+                                  Builder(
+                                    builder: (context) {
+                                      String rawUrl = review['image_url'];
+                                      // Se è un vecchio percorso locale usa il backendUrl, altrimenti usa l'URL Cloudinary
+                                      String finalImageUrl = rawUrl.startsWith('http') 
+                                          ? rawUrl 
+                                          : '${widget.backendUrl}$rawUrl';
+
+                                      return Image.network(
+                                        finalImageUrl,
+                                        height: 120,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) => const Text('Image unavailable'),
+                                      );
+                                    },
                                   ),
                                 ],
                               ],

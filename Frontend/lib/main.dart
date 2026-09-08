@@ -44,8 +44,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // Backend URL configuration (Requirement 9)
-  final String backendUrl = "http://10.0.2.2:8000";
-  
+  final String backendUrl = "https://urbanfoodhunt.onrender.com";
   String _serverStatus = "Not connected";
   List<dynamic> _spotsList = [];
   bool _isLoading = false;
