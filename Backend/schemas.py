@@ -1,63 +1,87 @@
+"""
+schemas.py
+----------------
+Defines the Pydantic data validation and serialization schemas for incoming and 
+outgoing data across the Urban Food Hunt REST API endpoints.
+"""
+
 from typing import Optional
 from pydantic import BaseModel, ConfigDict  # pyright: ignore[reportMissingImports]
 
 
-# Schema used when registering a new user
 class UserCreate(BaseModel):
-  username: str
-  email: str
-  password: str
+    """
+    Schema validating user registration requests.
+    Required fields: username, email, and password.
+    """
+    username: str
+    email: str
+    password: str
 
 
-# Schema used when returning user data in responses
 class UserResponse(BaseModel):
-  id: int
-  username: str
-  email: str
+    """
+    Schema defining the safe user data returned in API responses 
+    (excludes sensitive fields like raw passwords).
+    """
+    id: int
+    username: str
+    email: str
 
-  model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
-# Schema used when adding a new street food spot
 class FoodSpotCreate(BaseModel):
-  name: str
-  description: Optional[str] = None
-  address: str
-  user_id: int
+    """
+    Schema validating requests when adding a new food spot or restaurant.
+    """
+    name: str
+    description: Optional[str] = None
+    address: str
+    user_id: int
 
 
-# Schema used when returning food spot data in responses
 class FoodSpotResponse(BaseModel):
-  id: int
-  name: str
-  description: Optional[str] = None
-  address: str
-  user_id: int
+    """
+    Schema validating the food spot details returned by API responses.
+    """
+    id: int
+    name: str
+    description: Optional[str] = None
+    address: str
+    user_id: int
 
-  model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
-# Schema used when creating a review for a food spot
 class ReviewCreate(BaseModel):
-  rating: int
-  comment: Optional[str] = None
-  image_url: Optional[str] = None
-  user_id: int
+    """
+    Schema validating incoming review creation data (ratings, text comments, user ID).
+    """
+    rating: int
+    comment: Optional[str] = None
+    image_url: Optional[str] = None
+    user_id: int
 
 
-# Schema used when returning review data in responses
 class ReviewResponse(BaseModel):
-  id: int
-  spot_id: str
-  user_id: int
-  rating: int
-  comment: Optional[str] = None
-  image_url: Optional[str] = None
+    """
+    Schema defining review details returned by API endpoints, 
+    including links to cloud storage images.
+    """
+    id: int
+    spot_id: str
+    user_id: int
+    rating: int
+    comment: Optional[str] = None
+    image_url: Optional[str] = None
 
-  model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
-# Schema for user login authentication 
 class UserLogin(BaseModel):
-  username: str
-  password: str
+    """
+    Schema validating user login credentials (username and password).
+    """
+    username: str
+    password: str

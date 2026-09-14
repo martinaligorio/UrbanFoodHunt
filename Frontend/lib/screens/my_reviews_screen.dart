@@ -1,3 +1,7 @@
+// my_reviews_screen.dart
+// Manages the user's personal reviews screen for the Urban Food Hunt application.
+// Allows users to view, edit, and delete their posted reviews.
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -262,6 +266,7 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                           (index) => const Icon(Icons.star, color: Colors.amber, size: 16),
                                         ),
                                         const SizedBox(width: 4),
+                                        // Pulsante Modifica (Matita Blu)
                                         IconButton(
                                           icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                                           tooltip: 'Edit review',
@@ -270,6 +275,7 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                           padding: EdgeInsets.zero,
                                         ),
                                         const SizedBox(width: 4),
+                                        // Pulsante Elimina (Cestino Rosso)
                                         IconButton(
                                           icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                           tooltip: 'Delete review',
@@ -288,7 +294,6 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                   Builder(
                                     builder: (context) {
                                       String rawUrl = review['image_url'];
-                                      // Se è un vecchio percorso locale usa il backendUrl, altrimenti usa l'URL Cloudinary
                                       String finalImageUrl = rawUrl.startsWith('http') 
                                           ? rawUrl 
                                           : '${widget.backendUrl}$rawUrl';

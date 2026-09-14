@@ -1,7 +1,11 @@
+// login_screen.dart
+// Handles user authentication (login and registration) for the Urban Food Hunt application.
+// Satisfies Requirement 2: Support multiple users with login and authentication.
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'main.dart'; // Importa la schermata principale
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,13 +15,13 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final String backendUrl = "http://10.0.2.2:8000";
+  final String backendUrl = "https://urbanfoodhunt.onrender.com";
   
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   
-  bool _isLoginMode = true; // True = Login, False = Register
+  bool _isLoginMode = true;
   bool _isLoading = false;
   String _errorMessage = "";
   String _successMessage = "";
@@ -31,7 +35,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       if (_isLoginMode) {
-        // --- CHIAMATA LOGIN ---
         final response = await http.post(
           Uri.parse('$backendUrl/users/login'),
           headers: {"Content-Type": "application/json"},
@@ -56,7 +59,6 @@ class _LoginScreenState extends State<LoginScreen> {
           });
         }
       } else {
-        // --- CHIAMATA REGISTRAZIONE ---
         final response = await http.post(
           Uri.parse('$backendUrl/users/register'),
           headers: {"Content-Type": "application/json"},
@@ -70,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (response.statusCode == 200) {
           setState(() {
             _successMessage = "Registration successful! Please log in.";
-            _isLoginMode = true; // Riporta l'utente alla schermata di login
+            _isLoginMode = true;
           });
         } else {
           final body = json.decode(response.body);
@@ -122,7 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     prefixIcon: Icon(Icons.person),
                   ),
                 ),
-                // Mostra il campo Email solo se siamo in modalità Registrazione
                 if (!_isLoginMode) ...[
                   const SizedBox(height: 15),
                   TextField(
