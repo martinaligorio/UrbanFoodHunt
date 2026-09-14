@@ -38,11 +38,14 @@ Every single requirement for the project has been fully implemented and tested:
 The project is organized as a monorepo containing both the backend service and the mobile client:
 
 ```text
-
 UrbanFoodHunt/
 │
 ├── Backend/                 # Python FastAPI server
-│   ├── main.py              # Main API routes (Yelp, Cloudinary upload, etc.)
+│   ├── routers/             # Modular API route controllers
+│   │   ├── users.py         # User registration and authentication endpoints
+│   │   ├── spots.py         # Yelp API integration and nearby spot discovery
+│   │   └── reviews.py       # Review CRUD operations and Cloudinary uploads
+│   ├── main.py              # Application entry point and router integration
 │   ├── models.py            # SQLAlchemy database models (Users, Spots, Reviews)
 │   ├── schemas.py           # Pydantic data validation schemas
 │   ├── database.py          # Database configuration and session management
