@@ -53,7 +53,12 @@ UrbanFoodHunt/
 │   └── urbanfoodhunt.db     # SQLite relational database
 │
 └── Frontend/                # Flutter mobile application
-    ├── lib/                 # Dart source code (screens, logic, state management)
+    ├── lib/                 # Dart source code
+    │   ├── main.dart        # Application entry point and theme setup
+    │   └── screens/         # UI Screen views
+    │       ├── login_screen.dart       # Authentication & registration view
+    │       ├── home_screen.dart        # Main dashboard (GPS, sensors, Yelp, charts)
+    │       └── my_reviews_screen.dart  # User reviews CRUD management view
     ├── android/             # Android-specific configurations
     ├── ios/                 # iOS-specific configurations
     └── pubspec.yaml         # Flutter dependencies and assets
