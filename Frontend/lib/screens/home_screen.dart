@@ -1,3 +1,8 @@
+// home_screen.dart
+// Main dashboard screen for the Urban Food Hunt application.
+// Handles GPS location tracking, accelerometer shake sensor, Yelp spot discovery, 
+// 2D rating charts, and multi-image review submissions with camera/gallery support.
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -7,7 +12,7 @@ import 'dart:io';
 import 'package:geolocator/geolocator.dart'; // Required for GPS tracking (Requirement 5)
 import 'package:sensors_plus/sensors_plus.dart'; // Required for accelerometer sensor (Requirement 4)
 import 'package:fl_chart/fl_chart.dart'; // Required for 2D graphics (Requirement 3)
-import 'package:image_picker/image_picker.dart'; // Required for camera integration (Requirement 6)
+import 'package:image_picker/image_picker.dart'; // Required for camera and gallery integration (Requirement 6)
 import 'my_reviews_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -68,15 +73,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Displays an interactive review dialog allowing star rating selection, comments, 
-  /// and native camera photo capture (Requirement 6)
+  /// and capturing/picking multiple photos via camera or gallery (Requirement 6)
   void _showAddReviewDialog(BuildContext context, String spotId, String spotName) {
     final TextEditingController commentController = TextEditingController();
     int selectedRating = 5;
-    File? dialogImage;
+    List<File> dialogImages = [];
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (BuildContext dialogContext) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
@@ -113,37 +118,113 @@ class _HomeScreenState extends State<HomeScreen> {
                       maxLines: 3,
                     ),
                     const SizedBox(height: 15),
-                    Center(
-                      child: dialogImage != null
-                          ? Image.file(dialogImage!, height: 100, width: 100, fit: BoxFit.cover)
-                          : const Text('No photo attached', style: TextStyle(color: Colors.grey)),
-                    ),
-                    const SizedBox(height: 10),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-                        if (image != null) {
-                          setStateDialog(() {
-                            dialogImage = File(image.path);
-                          });
-                        }
-                      },
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text('Take Photo (Camera)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+                    const Text('Attached Photos:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 5),
+                    dialogImages.isEmpty
+                        ? const Text('No photos attached yet', style: TextStyle(color: Colors.grey))
+                        : SizedBox(
+                            height: 80,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: dialogImages.asMap().entries.map((entry) {
+                                  int imgIndex = entry.key;
+                                  File file = entry.value;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8.0),
+                                    child: Stack(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Image.file(
+                                            file, 
+                                            height: 80, 
+                                            width: 80, 
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setStateDialog(() {
+                                                dialogImages.removeAt(imgIndex);
+                                              });
+                                            },
+                                            child: Container(
+                                              color: Colors.black54,
+                                              child: const Icon(Icons.close, color: Colors.white, size: 18),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                    const SizedBox(height: 15),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Button to capture a photo using device camera
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            try {
+                              final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+                              if (photo != null) {
+                                setStateDialog(() {
+                                  dialogImages.add(File(photo.path));
+                                });
+                              }
+                            } catch (e) {
+                              print("Camera error: $e");
+                            }
+                          },
+                          icon: const Icon(Icons.camera_alt, size: 16),
+                          label: const Text('Camera'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepOrange, 
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                        // Button to pick multiple photos from gallery
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            try {
+                              final List<XFile> images = await _picker.pickMultiImage();
+                              if (images.isNotEmpty) {
+                                setStateDialog(() {
+                                  dialogImages.addAll(images.map((img) => File(img.path)));
+                                });
+                              }
+                            } catch (e) {
+                              print("Gallery error: $e");
+                            }
+                          },
+                          icon: const Icon(Icons.photo_library, size: 16),
+                          label: const Text('Gallery'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange, 
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(dialogContext),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    Navigator.pop(context);
-                    await _submitReviewCustom(spotId, spotName, selectedRating, commentController.text, dialogImage);
+                    Navigator.pop(dialogContext);
+                    await _submitReviewCustom(spotId, spotName, selectedRating, commentController.text, dialogImages);
                   },
                   child: const Text('Submit'),
                 ),
@@ -155,8 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Asynchronously submits a review with multipart form data (image + text) to the remote backend (Requirement 7 & 9)
-  Future<void> _submitReviewCustom(String spotId, String spotName, int rating, String comment, File? imageFile) async {
+  /// Asynchronously submits a review with multiple files via multipart form data to the remote backend (Requirement 7 & 9)
+  Future<void> _submitReviewCustom(String spotId, String spotName, int rating, String comment, List<File> imageFiles) async {
     if (widget.userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You must be logged in to post a review!')),
@@ -174,9 +255,10 @@ class _HomeScreenState extends State<HomeScreen> {
     request.fields['user_id'] = widget.userId.toString();
     request.fields['spot_name'] = spotName;
 
-    if (imageFile != null) {
+    // Attach multiple files under the key 'files'
+    for (var file in imageFiles) {
       request.files.add(
-        await http.MultipartFile.fromPath('file', imageFile.path),
+        await http.MultipartFile.fromPath('files', file.path),
       );
     }
 
@@ -616,23 +698,23 @@ class _HomeScreenState extends State<HomeScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 4.0),
                             child: ListTile(
                               leading: spot['image_url'] != null && spot['image_url'].toString().isNotEmpty
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          spot['image_url'],
-                                          width: 50,
-                                          height: 50,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) => const CircleAvatar(
-                                            backgroundColor: Colors.orangeAccent,
-                                            child: Icon(Icons.storefront, color: Colors.white),
-                                          ),
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        spot['image_url'],
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) => const CircleAvatar(
+                                          backgroundColor: Colors.orangeAccent,
+                                          child: Icon(Icons.storefront, color: Colors.white),
                                         ),
-                                      )
+                                      ),
+                                    )
                                   : const CircleAvatar(
-                                    backgroundColor: Colors.orangeAccent,
-                                    child: Icon(Icons.storefront, color: Colors.white),
-                                  ),
+                                      backgroundColor: Colors.orangeAccent,
+                                      child: Icon(Icons.storefront, color: Colors.white),
+                                    ),
                               title: Text(
                                 spot['name'] ?? '',
                                 style: const TextStyle(fontWeight: FontWeight.bold),

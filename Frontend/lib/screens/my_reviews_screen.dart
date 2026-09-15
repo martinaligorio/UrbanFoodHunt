@@ -1,3 +1,7 @@
+// my_reviews_screen.dart
+// Manages the user's personal reviews screen for the Urban Food Hunt application.
+// Allows users to view, edit, and delete their posted reviews supporting multiple images.
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -82,7 +86,12 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
   void _showEditReviewDialog(Map<String, dynamic> review) {
     final TextEditingController commentController = TextEditingController(text: review['comment'] ?? '');
     int currentRating = review['rating'] ?? 5;
-    File? newImageFile;
+    List<File> newImageFiles = [];
+
+    // Parse existing image URLs safely
+    List<String> existingImageUrls = (review['image_url'] != null && review['image_url'].toString().isNotEmpty)
+        ? review['image_url'].toString().split(',').map((u) => u.trim()).where((u) => u.isNotEmpty).toList()
+        : [];
 
     showDialog(
       context: context,
@@ -123,39 +132,97 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                       maxLines: 3,
                     ),
                     const SizedBox(height: 15),
-                    Center(
-                      child: newImageFile != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.file(newImageFile!, height: 80, width: 80, fit: BoxFit.cover),
-                            )
-                          : (review['image_url'] != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    review['image_url'].startsWith('http') 
-                                        ? review['image_url'] 
-                                        : '${widget.backendUrl}${review['image_url']}',
-                                    height: 80, 
-                                    width: 80, 
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                              : const Text('No photo', style: TextStyle(color: Colors.grey))),
-                    ),
-                    const SizedBox(height: 10),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-                        if (image != null) {
-                          setStateDialog(() {
-                            newImageFile = File(image.path);
-                          });
-                        }
-                      },
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text('Change Photo'),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+                    const Text('Photos:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 5),
+                    existingImageUrls.isEmpty && newImageFiles.isEmpty
+                        ? const Text('No photos', style: TextStyle(color: Colors.grey))
+                        : SizedBox(
+                            height: 80,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  ...existingImageUrls.map((url) {
+                                    String finalUrl = url.startsWith('http') ? url : '${widget.backendUrl}$url';
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 8.0),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(finalUrl, height: 80, width: 80, fit: BoxFit.cover),
+                                      ),
+                                    );
+                                  }),
+                                  ...newImageFiles.asMap().entries.map((entry) {
+                                    int imgIndex = entry.key;
+                                    File file = entry.value;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 8.0),
+                                      child: Stack(
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Image.file(file, height: 80, width: 80, fit: BoxFit.cover),
+                                          ),
+                                          Positioned(
+                                            right: 0,
+                                            top: 0,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                setStateDialog(() {
+                                                  newImageFiles.removeAt(imgIndex);
+                                                });
+                                              },
+                                              child: Container(
+                                                color: Colors.black54,
+                                                child: const Icon(Icons.close, color: Colors.white, size: 18),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ),
+                    const SizedBox(height: 15),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+                            if (photo != null) {
+                              setStateDialog(() {
+                                newImageFiles.add(File(photo.path));
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.camera_alt, size: 16),
+                          label: const Text('Camera'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepOrange, 
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final List<XFile> images = await _picker.pickMultiImage();
+                            if (images.isNotEmpty) {
+                              setStateDialog(() {
+                                newImageFiles.addAll(images.map((img) => File(img.path)));
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.photo_library, size: 16),
+                          label: const Text('Gallery'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange, 
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -168,7 +235,7 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                 ElevatedButton(
                   onPressed: () async {
                     Navigator.pop(context);
-                    await _updateReviewOnBackend(review['id'], currentRating, commentController.text, newImageFile);
+                    await _updateReviewOnBackend(review['id'], currentRating, commentController.text, newImageFiles);
                   },
                   child: const Text('Save'),
                 ),
@@ -180,7 +247,7 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
     );
   }
 
-  Future<void> _updateReviewOnBackend(int reviewId, int rating, String comment, File? imageFile) async {
+  Future<void> _updateReviewOnBackend(int reviewId, int rating, String comment, List<File> imageFiles) async {
     var request = http.MultipartRequest(
       'PUT',
       Uri.parse('${widget.backendUrl}/reviews/$reviewId'),
@@ -189,9 +256,9 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
     request.fields['rating'] = rating.toString();
     request.fields['comment'] = comment;
 
-    if (imageFile != null) {
+    for (var file in imageFiles) {
       request.files.add(
-        await http.MultipartFile.fromPath('file', imageFile.path),
+        await http.MultipartFile.fromPath('files', file.path),
       );
     }
 
@@ -243,6 +310,11 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                       itemCount: _myReviews.length,
                       itemBuilder: (context, index) {
                         final review = _myReviews[index];
+                        
+                        List<String> imageUrls = (review['image_url'] != null && review['image_url'].toString().isNotEmpty)
+                            ? review['image_url'].toString().split(',').map((u) => u.trim()).where((u) => u.isNotEmpty).toList()
+                            : [];
+
                         return Card(
                           elevation: 3,
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -292,26 +364,45 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(review['comment'] ?? 'No comment provided.'),
-                                if (review['image_url'] != null) ...[
+                                if (imageUrls.isNotEmpty) ...[
                                   const SizedBox(height: 10),
-                                  Builder(
-                                    builder: (context) {
-                                      String rawUrl = review['image_url'];
-                                      String finalImageUrl = rawUrl.startsWith('http') 
-                                          ? rawUrl 
-                                          : '${widget.backendUrl}$rawUrl';
+                                  SizedBox(
+                                    height: 120,
+                                    child: ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: imageUrls.length,
+                                      itemBuilder: (context, imgIndex) {
+                                        String rawUrl = imageUrls[imgIndex];
+                                        String finalImageUrl = rawUrl.startsWith('http') 
+                                            ? rawUrl 
+                                            : '${widget.backendUrl}$rawUrl';
 
-                                      return ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Image.network(
-                                          finalImageUrl,
-                                          height: 140,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) => const Text('Image unavailable'),
-                                        ),
-                                      );
-                                    },
+                                        return Padding(
+                                          padding: const EdgeInsets.only(right: 8.0),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(12),
+                                            child: Image.network(
+                                              finalImageUrl,
+                                              height: 120,
+                                              width: 120,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) => Container(
+                                                height: 120,
+                                                width: 120,
+                                                color: Colors.grey[300],
+                                                child: const Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(Icons.broken_image, color: Colors.grey, size: 30),
+                                                    Text('Failed', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ],
                               ],
