@@ -155,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Asynchronously submits a review with multipart form data (image + text) to the remote backend (Requirement 7 & 9)[cite: 14]
+  /// Asynchronously submits a review with multipart form data (image + text) to the remote backend (Requirement 7 & 9)
   Future<void> _submitReviewCustom(String spotId, String spotName, int rating, String comment, File? imageFile) async {
     if (widget.userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -201,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Opens a modal bottom sheet displaying an interactive 2D Bar Chart of restaurant ratings (Requirement 3: 2D Graphics)[cite: 14]
+  /// Opens a modal bottom sheet displaying an interactive 2D Bar Chart of restaurant ratings (Requirement 3: 2D Graphics)
   void _showRatingChartModal(BuildContext context) {
     if (_spotsList.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -308,45 +308,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Asynchronous function to test backend connection with cold-start handling (Requirement 7 & 9)[cite: 14]
-  Future<void> _checkServerConnection() async {
-    setState(() {
-      _isLoading = true;
-      _serverStatus = "Waking up server from cold start (can take up to 30s)...";
-    });
-
-    try {
-      final response = await http.get(Uri.parse('$backendUrl/')).timeout(
-        const Duration(seconds: 50),
-        onTimeout: () {
-          throw TimeoutException("Server wake-up timeout. Please retry.");
-        },
-      );
-      
-      if (response.statusCode == 200) {
-        setState(() {
-          _serverStatus = "Connected successfully! Server is online.";
-        });
-      } else {
-        setState(() {
-          _serverStatus = "Server responded with status: ${response.statusCode}";
-        });
-      }
-    } on TimeoutException {
-      setState(() {
-        _serverStatus = "Cold start delay: Server is waking up, please tap again.";
-      });
-    } catch (e) {
-      setState(() {
-        _serverStatus = "Connection failed: $e";
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
   /// Navigates to the user reviews management screen
   void _navigateToMyReviews() {
     if (widget.userId == null) {
@@ -364,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Asynchronously acquires device GPS coordinates and fetches nearby spots from the cloud server (Requirement 5, 7, & 9)[cite: 14]
+  /// Asynchronously acquires device GPS coordinates and fetches nearby spots from the cloud server (Requirement 5, 7, & 9)
   Future<void> _getCurrentLocationAndFetchSpots() async {
     setState(() {
       _isGettingLocation = true;
@@ -443,7 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Listens to the device accelerometer sensor to detect shake gestures (Requirement 4: Sensors)[cite: 14]
+  /// Listens to the device accelerometer sensor to detect shake gestures (Requirement 4: Sensors)
   void _startListeningToSensor() {
     _accelerometerSubscription = accelerometerEvents.listen((AccelerometerEvent event) {
       double acceleration = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
@@ -646,41 +607,73 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemBuilder: (context, index) {
                         final spot = _spotsList[index];
                         return Card(
-                          elevation: 2,
-                          child: ListTile(
-                            leading: const Icon(Icons.storefront, color: Colors.orange),
-                            title: Text(spot['name'] ?? ''),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  spot['address'] ?? '',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.star, color: Colors.amber, size: 16),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        "${spot['rating'] ?? 0.0} (${spot['review_count'] ?? 0} reviews) • ${spot['distance_km'] ?? 0.0} km",
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 13),
+                          elevation: 3,
+                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4.0),
+                            child: ListTile(
+                              leading: spot['image_url'] != null && spot['image_url'].toString().isNotEmpty
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          spot['image_url'],
+                                          width: 50,
+                                          height: 50,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => const CircleAvatar(
+                                            backgroundColor: Colors.orangeAccent,
+                                            child: Icon(Icons.storefront, color: Colors.white),
+                                          ),
+                                        ),
+                                      )
+                                  : const CircleAvatar(
+                                    backgroundColor: Colors.orangeAccent,
+                                    child: Icon(Icons.storefront, color: Colors.white),
+                                  ),
+                              title: Text(
+                                spot['name'] ?? '',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    spot['address'] ?? '',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star, color: Colors.amber, size: 16),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          "${spot['rating'] ?? 0.0} (${spot['review_count'] ?? 0} reviews) • ${spot['distance_km'] ?? 0.0} km",
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 13, color: Colors.black87),
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              trailing: ElevatedButton.icon(
+                                onPressed: () => _showAddReviewDialog(context, spot['id'].toString(), spot['name']),
+                                icon: const Icon(Icons.rate_review, size: 16),
+                                label: const Text('Review'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
                                 ),
-                              ],
-                            ),
-                            trailing: ElevatedButton.icon(
-                              onPressed: () => _showAddReviewDialog(context, spot['id'].toString(), spot['name']),
-                              icon: const Icon(Icons.rate_review, size: 16),
-                              label: const Text('Review'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                               ),
                             ),
                           ),

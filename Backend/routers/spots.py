@@ -72,7 +72,8 @@ async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
                     "review_count": biz.get("review_count", 0),
                     "latitude": biz.get("coordinates", {}).get("latitude"),
                     "longitude": biz.get("coordinates", {}).get("longitude"),
-                    "distance_km": distance_km
+                    "distance_km": distance_km,
+                    "image_url": biz.get("image_url")  
                 })
             
             filtered_spots = [s for s in spots if s["distance_km"] <= radius_km]

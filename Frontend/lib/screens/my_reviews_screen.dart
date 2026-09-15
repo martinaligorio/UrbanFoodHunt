@@ -1,7 +1,3 @@
-// my_reviews_screen.dart
-// Manages the user's personal reviews screen for the Urban Food Hunt application.
-// Allows users to view, edit, and delete their posted reviews.
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -129,18 +125,24 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                     const SizedBox(height: 15),
                     Center(
                       child: newImageFile != null
-                          ? Image.file(newImageFile!, height: 80, width: 80, fit: BoxFit.cover)
-                          : review['image_url'] != null
-                            ? Image.network(
-                                review['image_url'].startsWith('http') 
-                                    ? review['image_url'] 
-                                    : '${widget.backendUrl}${review['image_url']}',
-                                height: 80, 
-                                width: 80, 
-                                fit: BoxFit.cover,
-                              )
-                            : const Text('No photo', style: TextStyle(color: Colors.grey)),  
-                          ),
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(newImageFile!, height: 80, width: 80, fit: BoxFit.cover),
+                            )
+                          : (review['image_url'] != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    review['image_url'].startsWith('http') 
+                                        ? review['image_url'] 
+                                        : '${widget.backendUrl}${review['image_url']}',
+                                    height: 80, 
+                                    width: 80, 
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : const Text('No photo', style: TextStyle(color: Colors.grey))),
+                    ),
                     const SizedBox(height: 10),
                     ElevatedButton.icon(
                       onPressed: () async {
@@ -242,8 +244,11 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                       itemBuilder: (context, index) {
                         final review = _myReviews[index];
                         return Card(
+                          elevation: 3,
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.all(12.0),
                             child: Column(
@@ -266,7 +271,6 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                           (index) => const Icon(Icons.star, color: Colors.amber, size: 16),
                                         ),
                                         const SizedBox(width: 4),
-                                        // Pulsante Modifica (Matita Blu)
                                         IconButton(
                                           icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
                                           tooltip: 'Edit review',
@@ -275,7 +279,6 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                           padding: EdgeInsets.zero,
                                         ),
                                         const SizedBox(width: 4),
-                                        // Pulsante Elimina (Cestino Rosso)
                                         IconButton(
                                           icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                           tooltip: 'Delete review',
@@ -298,12 +301,15 @@ class _MyReviewsScreenState extends State<MyReviewsScreen> {
                                           ? rawUrl 
                                           : '${widget.backendUrl}$rawUrl';
 
-                                      return Image.network(
-                                        finalImageUrl,
-                                        height: 120,
-                                        width: double.infinity,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) => const Text('Image unavailable'),
+                                      return ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          finalImageUrl,
+                                          height: 140,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => const Text('Image unavailable'),
+                                        ),
                                       );
                                     },
                                   ),
