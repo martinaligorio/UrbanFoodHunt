@@ -1,10 +1,11 @@
 """
 routers/spots.py
 ----------------
-Handles public cloud service integration (Yelp Fusion API) for nearby spot discovery (Requirement 1 & 7).
+Handles public cloud service integration (Google Places API) for nearby spot discovery (Requirement 1 & 7).
 """
 
 import httpx
+import math
 from importlib import import_module
 
 try:
@@ -22,64 +23,75 @@ except ModuleNotFoundError:  # Allow this module to be imported without FastAPI 
 
 router = APIRouter(prefix="/spots", tags=["Food Spots"])
 
-YELP_API_KEY = "QGh5a62SpWUXrXsO7BxGGvt6LvM9CDw8p3OLJSThY0qXXJppqNmydFaP7mgMTj8GmAAm9r9dRylNMJghruF6epmrcY7by0HFdSnlq_dGVJ90aIwz0U1k4JvnivqWanYx"
+# Sostituisci con la tua chiave API di Google Cloud (Places API)
+API_KEY = "AIzaSyAJoNtdjjTGJ0PC9I0lP32-RY3JHvEgmFk"
 
+def haversine(lat1, lon1, lat2, lon2):
+    """Calcola la distanza in km tra due punti geografici."""
+    if lat2 is None or lon2 is None:
+        return 0.0
+    R = 6371.0   #raggio della Terra in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return round(R * c, 2)
 
 @router.get("/nearby")
 async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
-    """Fetches nearby food spots asynchronously from the Yelp Fusion API."""
-    url = "https://api.yelp.com/v3/businesses/search"
+    """Fetches nearby food spots asynchronously from the Google Places API."""
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
     
-    headers = {
-        "Authorization": f"Bearer {YELP_API_KEY}",
-        "accept": "application/json"
-    }
-    
-    radius_meters = int(min(max(radius_km * 1000, 500), 40000))
+    # Google accetta il raggio in metri (massimo 50000m)
+    radius_meters = int(min(max(radius_km * 1000, 500), 50000))
     
     params = {
-        "latitude": lat,
-        "longitude": lon,
-        "term": "restaurants",
-        "radius": radius_meters, 
-        "limit": 30
+        "location": f"{lat},{lon}",
+        "radius": radius_meters,
+        "type": "restaurant",
+        "key": API_KEY
     }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, headers=headers, params=params)
+            response = await client.get(url, params=params)
+            
+            # AGGIUNGI QUESTI PRINT PER VEDERE TUTTO SU RENDER
+            print(f"Google Status Code: {response.status_code}")
+            print(f"Google Response Text: {response.text}")
             
             if response.status_code != 200:
                 return []
                 
             data = response.json()
-            businesses = data.get("businesses", [])
+            results = data.get("results", [])
             
             spots = []
-            for biz in businesses:
-                location = biz.get("location", {})
-                address_parts = location.get("display_address", ["Address not specified"])
-                address_str = ", ".join(address_parts)
+            for place in results:
+                location = place.get("geometry", {}).get("location", {})
+                lat_biz = location.get("lat")
+                lon_biz = location.get("lng")
                 
-                distance_meters = biz.get("distance", 0.0)
-                distance_km = round(distance_meters / 1000.0, 2)
+                # Calcoliamo la distanza dal punto dell'utente
+                distance_km = haversine(lat, lon, lat_biz, lon_biz)
                 
                 spots.append({
-                    "id": biz.get("id"),
-                    "name": biz.get("name"),
-                    "address": address_str,
-                    "rating": biz.get("rating", 0.0),
-                    "review_count": biz.get("review_count", 0),
-                    "latitude": biz.get("coordinates", {}).get("latitude"),
-                    "longitude": biz.get("coordinates", {}).get("longitude"),
+                    "id": place.get("place_id"),
+                    "name": place.get("name"),
+                    "address": place.get("vicinity", "Address not specified"),
+                    "rating": place.get("rating", 0.0),
+                    "review_count": place.get("user_ratings_total", 0),
+                    "latitude": lat_biz,
+                    "longitude": lon_biz,
                     "distance_km": distance_km,
-                    "image_url": biz.get("image_url")  
+                    "image_url": None  # Google Places standard Nearby Search non fornisce immagini dirette senza una chiamata aggiuntiva (Place Photos)
                 })
             
+            # Filtriamo e ordiniamo per distanza
             filtered_spots = [s for s in spots if s["distance_km"] <= radius_km]
             filtered_spots.sort(key=lambda x: x["distance_km"])
             return filtered_spots
 
     except Exception as e:
-        print(f"Error fetching data from Yelp API: {e}")
+        print(f"Error fetching data from Google Places API: {e}")
         return []

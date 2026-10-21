@@ -4,13 +4,21 @@ routers/reviews.py
 Handles review CRUD operations and Cloudinary cloud image uploads (Requirements 6, 8, & 10).
 """
 
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING, Any, List
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form  # pyright: ignore[reportMissingImports]
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session  # pyright: ignore[reportMissingImports]
+else:
+    try:
+        from sqlalchemy.orm import Session  # pyright: ignore[reportMissingImports]
+    except ImportError:  # pragma: no cover
+        Session = Any
+
 from database import get_db
 import models
 import schemas
-import cloudinary.uploader
+import cloudinary.uploader  # pyright: ignore[reportMissingImports]
 
 router = APIRouter(tags=["Reviews"])
 
