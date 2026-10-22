@@ -743,17 +743,23 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ],
                               ),
-                              trailing: ElevatedButton.icon(
-                                onPressed: () => _showAddReviewDialog(context, spot['id'].toString(), spot['name']),
-                                icon: const Icon(Icons.rate_review, size: 16),
-                                label: const Text('Review'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                              trailing: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.orange,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.rate_review, color: Colors.white, size: 20),
+                                  tooltip: 'Add Review',
+                                  constraints: const BoxConstraints(
+                                    minWidth: 36,
+                                    minHeight: 36,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () => _showAddReviewDialog(
+                                    context, 
+                                    spot['id'].toString(), 
+                                    spot['name'],
                                   ),
                                 ),
                               ),
