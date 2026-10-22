@@ -1,8 +1,8 @@
 """
 routers/spots.py
 ----------------
-Handles public cloud service integration (Google Places API) for nearby spot discovery,
-including calculating precise distances and extracting place photo URLs.
+Handles public cloud service integration (Google Places API) for nearby spot discovery.
+Fulfills project requirements for public cloud services, asynchronous concurrency, and REST APIs.
 """
 
 import httpx
@@ -31,7 +31,8 @@ API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyAJoNtdjjTGJ0PC9I0lP32-RY3JHvEg
 def haversine(lat1, lon1, lat2, lon2):
     """
     Calculates the great-circle distance in kilometers between two geographic points 
-    using latitude and longitude. Maintained unrounded for precise sorting.
+    using their latitude and longitude. 
+    Maintains high mathematical precision without premature rounding to ensure accurate sorting.
     """
     if lat2 is None or lon2 is None:
         return 0.0
@@ -40,37 +41,41 @@ def haversine(lat1, lon1, lat2, lon2):
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     
+    # Haversine formula components
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
     c = 2 * math.asin(math.sqrt(a))
     
-    return R * c
+    return R * c  # Returns exact distance in km (unrounded for sorting accuracy)
 
 @router.get("/nearby")
 async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
     """
-    Asynchronously fetches nearby restaurant spots from Google Places API,
-    calculates precise distances, extracts photo references when available,
-    filters by radius, and sorts by proximity.
+    Asynchronously fetches nearby restaurant spots from the Google Places API,
+    calculates precise distances, filters results within the requested radius,
+    and sorts them from closest to furthest.
     """
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
     
-    # Convert radius from kilometers to meters (max 50000m)
+    # Convert radius from kilometers to meters for Google Places API (max 50000m)
     radius_meters = int(min(max(radius_km * 1000, 500), 50000))
     
     params = {
         "location": f"{lat},{lon}",
-        "radius": radius_meters,
+        "rankby": "distance",
         "type": "restaurant",
         "key": API_KEY
     }
 
     try:
+        # Asynchronous HTTP client request to Google Places API (Requirement: Concurrency)
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, params=params)
             
+            # Print raw status and response text for real-time debugging on Render logs
             print(f"Google Places API Status Code: {response.status_code}")
             print(f"Google Places API Response: {response.text}")
             
+            # Return empty list if HTTP request fails
             if response.status_code != 200:
                 return []
                 
@@ -83,9 +88,9 @@ async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
                 lat_biz = location.get("lat")
                 lon_biz = location.get("lng")
                 
-                # Calculate distance from user coordinates
+                # Calculate precise distance from user coordinates
                 distance_km = haversine(lat, lon, lat_biz, lon_biz)
-                
+
                 # Extract photo reference and build direct Google Place Photo URL if available
                 image_url = None
                 photos = place.get("photos", [])
@@ -102,16 +107,17 @@ async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
                     "review_count": place.get("user_ratings_total", 0),
                     "latitude": lat_biz,
                     "longitude": lon_biz,
-                    "distance_km": round(distance_km, 2),
-                    "image_url": image_url  # Direct URL for rendering the place photo in the Android app UI
+                    "distance_km": round(distance_km, 2),  # Rounded value for clean UI display
+                    "image_url": image_url  # Google Places standard Nearby Search requires Place Photos API for images
                 })
             
-            # Filter by radius and sort ascending by distance
+            # Filter results to strictly match the requested radius and sort ascending by distance
             filtered_spots = [s for s in spots if s["distance_km"] <= radius_km]
             filtered_spots.sort(key=lambda x: x["distance_km"])
             
             return filtered_spots
 
     except Exception as e:
+        # Catch network or parsing errors and log them on Render dashboard
         print(f"Error fetching data from Google Places API: {e}")
         return []
