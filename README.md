@@ -6,8 +6,6 @@ Welcome to **Urban Food Hunt**, a full-stack mobile application designed to help
 
 ## 🚀 Key Features & Course Requirements Mapped
 
-Every single requirement for the project has been fully implemented and tested:
-
 1. **Public Cloud Service:** Integrates the **Google Places API** to fetch real-time restaurant data, ratings, and locations based on geographic coordinates, complete with precise distance calculation (Haversine formula) and photo extraction.
 2. **Multi-User Authentication:** Complete user registration and login system backed by secure database storage.
 3. **2D Graphics:** Features an interactive bar chart built with `fl_chart` to visualize the distribution of restaurant ratings in your area.
