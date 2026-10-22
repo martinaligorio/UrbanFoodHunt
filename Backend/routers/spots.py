@@ -59,11 +59,9 @@ async def get_nearby_spots(lat: float, lon: float, radius_km: float = 5.0):
     # Convert radius from kilometers to meters for Google Places API (max 50000m)
     radius_meters = int(min(max(radius_km * 1000, 500), 50000))
     
-    # Configure parameters using the user-defined radius (removing rankby=distance 
-    # to let Google search within the radius, and letting Python handle strict sorting).
     params = {
         "location": f"{lat},{lon}",
-        "radius": radius_meters,
+        "rankby": "distance",
         "type": "restaurant",
         "key": API_KEY
     }
